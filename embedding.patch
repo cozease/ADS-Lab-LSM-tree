@@ -13,7 +13,7 @@ index 554a4fd..ca8c8ae 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -1,4 +1,9 @@
--set(CMAKE_CXX_FLAGS -std=c++14)
+-set(CMAKE_CXX_FLAGS -std=c++17)
 +cmake_minimum_required(VERSION 3.10)
 +project(LSM_TREE)
 +
