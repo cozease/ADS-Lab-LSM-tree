@@ -34,7 +34,3 @@ Thumbs.db
 persistence
 bench
 correctness
-
-# Ignore homework handin files
-*.pdf
-*.zip
