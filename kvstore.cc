@@ -326,17 +326,15 @@ void KVStore::compaction() {
         sstable ss;
         ss.setTime(++TIME);
         ss.setFilename("./data/level-" + std::to_string(curLevel) + "/" + std::to_string(TIME) + ".sst");
-        while (datas.size() > 0) {
-            auto data = datas.begin();
-            if (ss.getBytes() + 12 + data->second.first.length() > MAXSIZE) {
+        for (auto data : datas) {
+            if (ss.getBytes() + 12 + data.second.first.length() > MAXSIZE) {
                 ss.putFile(ss.getFilename().data());
                 addsstable(ss, curLevel);
                 ss.reset();
                 ss.setTime(++TIME);
                 ss.setFilename("./data/level-" + std::to_string(curLevel) + "/" + std::to_string(TIME) + ".sst");
             }
-            ss.insert(data->first, data->second.first);
-            datas.erase(data);
+            ss.insert(data.first, data.second.first);
         }
         if (ss.getCnt() > 0) {
             ss.putFile(ss.getFilename().data());
