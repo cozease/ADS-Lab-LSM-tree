@@ -24,6 +24,7 @@ void skiplist::insert(uint64_t key, const std::string &str) {
     if (p->nxt[0]->key == key) {
         bytes += str.length() - p->nxt[0]->val.length();
         p->nxt[0]->val = str;
+        p->nxt[0]->vec = embedding_single(str);
         return;
     }
     slnode *newNode = new slnode(key, str, NORMAL);

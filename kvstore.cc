@@ -3,6 +3,7 @@
 #include "skiplist.h"
 #include "sstable.h"
 #include "utils.h"
+#include "embedding.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -41,12 +42,20 @@ KVStore::KVStore(const std::string &dir) :
             break; // stop read
         }
         int nums = utils::scanDir(path, files);
-        sstablehead cur;
+        sstable cur;
         for (int i = 0; i < nums; ++i) {       // 读每一个文件头
             std::string url = path + files[i]; // url, 每一个文件名
-            cur.loadFileHead(url.data());
-            sstableIndex[totalLevel].push_back(cur);
+            cur.loadFile(url.data());
+            sstableIndex[totalLevel].push_back(cur.getHead());
             TIME = std::max(TIME, cur.getTime()); // 更新时间戳
+
+            // 读取每个文件里的所有value并存入embeddings中
+            std::vector<std::vector<float>> file_vecs;
+            for (int j = 0; j < cur.getCnt(); ++j) {
+                std::string val = cur.getData(j);
+                file_vecs.push_back(embedding_single(val));
+            }
+            vecs[totalLevel].push_back(file_vecs);
         }
     }
 }
@@ -268,6 +277,57 @@ void KVStore::scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, s
     }
 }
 
+struct simPair {
+    int level;
+    int table;
+    int index;
+    float sim;
+    simPair(int level, int table, int index, float sim) {
+        this->level = level;
+        this->table = table;
+        this->index = index;
+        this->sim   = sim;
+    }
+    bool operator>(const simPair &other) const {
+        return sim > other.sim;
+    }
+};
+
+std::vector<std::pair<uint64_t, std::string>> KVStore::search_knn(std::string query, int k) {
+    // 用一个最小堆来存放满足条件的k个kv对的索引
+    std::priority_queue<simPair, std::vector<simPair>, std::greater<simPair>> heap;
+    std::vector<float> query_vec = embedding_single(query);
+    for (int curLevel = 0; curLevel <= totalLevel; ++curLevel) {
+        for (int curTable = 0; curTable < vecs[curLevel].size(); ++curTable) {
+            for (int index = 0; index < vecs[curLevel][curTable].size(); ++index) {
+                float sim = common_embd_similarity_cos(query_vec.data(), vecs[curLevel][curTable][index].data(), query_vec.size());
+                if (heap.size() < k) {
+                    heap.push(simPair(curLevel, curTable, index, sim));
+                } else {
+                    if (sim > heap.top().sim) {
+                        heap.pop();
+                        heap.push(simPair(curLevel, curTable, index, sim));
+                    }
+                }
+            }
+        }
+    }
+
+    // 取出这k个kv对
+    std::vector<std::pair<uint64_t, std::string>> res;
+    while (!heap.empty()) {
+        simPair cur = heap.top();
+        heap.pop();
+        uint64_t key = sstableIndex[cur.level][cur.table].getKey(cur.index);
+        std::string filename = sstableIndex[cur.level][cur.table].getFilename();
+        uint32_t len;
+        int offset = sstableIndex[cur.level][cur.table].searchOffset(key, len);
+        std::string val = fetchString(filename, offset + 32 + 10240 + 12 * sstableIndex[cur.level][cur.table].getCnt(), len);
+        res.emplace(res.begin(), key, val);
+    }
+    return res;
+}
+
 void KVStore::compaction() {
     int curLevel = 0;
     // TODO here
@@ -276,6 +336,7 @@ void KVStore::compaction() {
         uint64_t start = INF, end = 0;  // 当前层要合并的sstable覆盖的区间
         int compactionNum;  // 当前层要合并的sstable数
 
+        // 处理当前层要合并的sstable
         if (curLevel == 0) compactionNum = sstableIndex[curLevel].size();
         else compactionNum = sstableIndex[curLevel].size() - (1 << curLevel + 1);
         for (int i = 0; i < compactionNum; ++i) {
@@ -284,6 +345,7 @@ void KVStore::compaction() {
             start = std::min(start, ssh.getMinV());
             end   = std::max(end, ssh.getMaxV());
         }
+        vecs[curLevel].erase(vecs[curLevel].begin(), vecs[curLevel].begin() + compactionNum);
 
         // 处理下一层要合并的sstable
         ++curLevel;
@@ -294,9 +356,10 @@ void KVStore::compaction() {
                 totalLevel++;
             }
         } else {
-            for (auto it : sstableIndex[curLevel]) {
-                if (!(it.getMinV() > end || it.getMaxV() < start))
-                    targets.push_back(it);
+            for (int i = sstableIndex[curLevel].size() - 1; i >= 0; --i) {
+                if (!(sstableIndex[curLevel][i].getMinV() > end || sstableIndex[curLevel][i].getMaxV() < start))
+                    targets.push_back(sstableIndex[curLevel][i]);
+                vecs[curLevel].erase(vecs[curLevel].begin() + i);
             }
         }
 
@@ -365,6 +428,14 @@ void KVStore::delsstable(std::string filename) {
 
 void KVStore::addsstable(sstable ss, int level) {
     sstableIndex[level].push_back(ss.getHead());
+
+    // embedding for each value
+    std::vector<std::vector<float>> file_vecs;
+    for (int i = 0; i < ss.getCnt(); ++i) {
+        std::string val = ss.getData(i);
+        file_vecs.push_back(embedding_single(val));
+    }
+    vecs[level].push_back(file_vecs);
 }
 
 char strBuf[2097152];

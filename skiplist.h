@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "embedding/embedding.h"
+
 enum TYPE {
     HEAD,
     NORMAL,
@@ -20,12 +22,14 @@ public:
     uint64_t key;
     std::string val;
     TYPE type;
+    std::vector<float> vec; // embedding for value
     std::vector<slnode *> nxt;
 
     slnode(uint64_t key, const std::string &val, TYPE type) {
         this->key  = key;
         this->val  = val;
         this->type = type;
+        this->vec = embedding_single(val);
         for (int i = 0; i < MAX_LEVEL; ++i)
             nxt.push_back(nullptr);
     }

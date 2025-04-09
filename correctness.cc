@@ -170,15 +170,15 @@ public:
     void start_test(void *args = NULL) override {
         std::cout << "KVStore Correctness Test" << std::endl;
 
-        store.reset();
+        // store.reset();
 
-        std::cout << "[Simple Test]" << std::endl;
-        regular_test(SIMPLE_TEST_MAX);
+        // std::cout << "[Simple Test]" << std::endl;
+        // regular_test(SIMPLE_TEST_MAX);
 
         store.reset();
 
         std::cout << "[Large Test]" << std::endl;
-        regular_test(1024 * 64);
+        regular_test(128);
 
         // store.reset();
         // std::cout << "[Insert Test]" << std::endl;

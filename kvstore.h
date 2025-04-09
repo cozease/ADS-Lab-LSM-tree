@@ -16,6 +16,8 @@ private:
 
     std::vector<sstablehead> sstableIndex[15]; // the sshead for each level
 
+    std::vector<std::vector<std::vector<float>>> vecs[15]; // embedding for each value
+
     int totalLevel = -1; // 层数
 public:
     KVStore(const std::string &dir);
@@ -31,6 +33,8 @@ public:
     void reset() override;
 
     void scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, std::string>> &list) override;
+
+    std::vector<std::pair<uint64_t, std::string>> search_knn(std::string query, int k) override;
 
     void compaction();
 

@@ -46,4 +46,10 @@ public:
      * An empty string indicates not found.
      */
     virtual void scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, std::string>> &list) = 0;
+
+    /**
+     * Search the nearest k key-value pairs to the given query.
+     * The result should be sorted by cosine similarity in decending order.
+     */
+    virtual std::vector<std::pair<std::uint64_t, std::string>> search_knn(std::string query, int k) = 0;
 };
