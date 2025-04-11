@@ -8,7 +8,7 @@
 #include <iostream>
 #include <string>
 #include <fstream>
-
+#include <chrono>
 
 std::vector<std::string> read_file(std::string filename) {
 	std::ifstream file(filename);
@@ -50,9 +50,14 @@ private:
 		uint64_t i;
 		auto trimmed_text = read_file("./data/trimmed_text.txt");
 		max				  = std::min(max, (uint64_t)trimmed_text.size());
+
+        auto put_start = std::chrono::high_resolution_clock::now();
 		for (i = 0; i < max; ++i) {
 			store.put(i, trimmed_text[i]);
 		}
+        auto put_end = std::chrono::high_resolution_clock::now();
+        auto put_duration = std::chrono::duration_cast<std::chrono::milliseconds>(put_end - put_start).count();
+        std::cout << "average put time: " << (double)put_duration / max << "ms" << std::endl;
 
 		for (i = 0; i < max; ++i)
 			EXPECT(trimmed_text[i], store.get(i));
@@ -66,8 +71,13 @@ private:
         ans = read_file("./data/test_text_ans.txt");
         phase();
 		int idx = 0, k = 3;
+        
+        long long search_duration = 0;
 		for (i = 0; i < max; ++i) {
+            auto search_start = std::chrono::high_resolution_clock::now();
 			auto res = store.search_knn(test_text[i], k);
+            auto search_end = std::chrono::high_resolution_clock::now();
+            search_duration += std::chrono::duration_cast<std::chrono::milliseconds>(search_end - search_start).count();
 			for (auto j : res) {
                 if(store.get(j.first) != j.second) {
                     std::cerr << "TEST Error @" << __FILE__ << ":" << __LINE__;
@@ -78,6 +88,7 @@ private:
 				idx++;
 			}
 		}
+        std::cout << "average search time: " << (double)search_duration / max << "ms" << std::endl;
 		auto phase_with_tolerance = [this](double tolerance = 0.03) {
 			// Report
 			std::cout << "  Phase " << (nr_phases + 1) << ": ";
