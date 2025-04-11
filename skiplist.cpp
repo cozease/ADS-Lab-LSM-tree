@@ -62,6 +62,44 @@ void skiplist::scan(uint64_t key1, uint64_t key2, std::vector<std::pair<uint64_t
     }
 }
 
+struct memPair {
+    uint64_t key;
+    std::string val;
+    float sim;
+    memPair(uint64_t key, const std::string &val, float sim) {
+        this->key = key;
+        this->val = val;
+        this->sim = sim;
+    }
+    bool operator>(const memPair &other) const {
+        return sim > other.sim;
+    }
+};
+
+std::vector<std::pair<float, std::pair<uint64_t, std::string>>> skiplist::search_knn(std::vector<float> query_vec, int k) {
+    std::priority_queue<memPair, std::vector<memPair>, std::greater<memPair>> heap;
+    slnode *p = head->nxt[0];
+    while (p != tail) {
+        float sim = common_embd_similarity_cos(query_vec.data(), p->vec.data(), query_vec.size());
+        if (heap.size() < k) {
+            heap.push(memPair(p->key, p->val, sim));
+        } else {
+            if (sim > heap.top().sim) {
+                heap.pop();
+                heap.push(memPair(p->key, p->val, sim));
+            }
+        }
+        p = p->nxt[0];
+    }
+    std::vector<std::pair<float, std::pair<uint64_t, std::string>>> res;
+    while (!heap.empty()) {
+        memPair cur = heap.top();
+        heap.pop();
+        res.push_back(std::make_pair(cur.sim, std::make_pair(cur.key, cur.val)));
+    }
+    return res;
+}
+
 slnode *skiplist::lowerBound(uint64_t key) {
 
 }

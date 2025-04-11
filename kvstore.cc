@@ -294,9 +294,13 @@ struct simPair {
 };
 
 std::vector<std::pair<uint64_t, std::string>> KVStore::search_knn(std::string query, int k) {
-    // 用一个最小堆来存放满足条件的k个kv对的索引
-    std::priority_queue<simPair, std::vector<simPair>, std::greater<simPair>> heap;
     std::vector<float> query_vec = embedding_single(query);
+
+    // 先从memtable里搜索
+    std::vector<std::pair<float, std::pair<uint64_t, std::string>>> res1 = s->search_knn(query_vec, k);
+
+    // 再从所有的sstable里搜索
+    std::priority_queue<simPair, std::vector<simPair>, std::greater<simPair>> heap;
     for (int curLevel = 0; curLevel <= totalLevel; ++curLevel) {
         for (int curTable = 0; curTable < vecs[curLevel].size(); ++curTable) {
             for (int index = 0; index < vecs[curLevel][curTable].size(); ++index) {
@@ -312,9 +316,7 @@ std::vector<std::pair<uint64_t, std::string>> KVStore::search_knn(std::string qu
             }
         }
     }
-
-    // 取出这k个kv对
-    std::vector<std::pair<uint64_t, std::string>> res;
+    std::vector<std::pair<float, std::pair<uint64_t, std::string>>> res2;
     while (!heap.empty()) {
         simPair cur = heap.top();
         heap.pop();
@@ -323,9 +325,20 @@ std::vector<std::pair<uint64_t, std::string>> KVStore::search_knn(std::string qu
         uint32_t len;
         int offset = sstableIndex[cur.level][cur.table].searchOffset(key, len);
         std::string val = fetchString(filename, offset + 32 + 10240 + 12 * sstableIndex[cur.level][cur.table].getCnt(), len);
-        res.emplace(res.begin(), key, val);
+        res2.push_back(std::make_pair(cur.sim, std::make_pair(key, val)));
     }
-    return res;
+    
+    // 合并两个结果
+    std::vector<std::pair<float, std::pair<uint64_t, std::string>>> res(res1.begin(), res1.end());
+    res.insert(res.end(), res2.begin(), res2.end());
+    std::sort(res.begin(), res.end(), [](const auto &a, const auto &b) {
+        return a.first > b.first;
+    });
+    std::vector<std::pair<uint64_t, std::string>> ans;
+    for (int i = 0; i < k; ++i) {
+        ans.push_back(std::make_pair(res[i].second.first, res[i].second.second));
+    }
+    return ans;
 }
 
 void KVStore::compaction() {
