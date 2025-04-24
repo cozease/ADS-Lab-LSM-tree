@@ -4,6 +4,7 @@
 #include "skiplist.h"
 #include "sstable.h"
 #include "sstablehead.h"
+#include "hnsw.h"
 
 #include <map>
 #include <set>
@@ -19,6 +20,8 @@ private:
     std::vector<std::vector<std::vector<float>>> vecs[15]; // embedding for each value
 
     int totalLevel = -1; // 层数
+
+    HNSW hnsw;
 public:
     KVStore(const std::string &dir);
 
@@ -33,8 +36,12 @@ public:
     void reset() override;
 
     void scan(uint64_t key1, uint64_t key2, std::list<std::pair<uint64_t, std::string>> &list) override;
-
+    
     std::vector<std::pair<uint64_t, std::string>> search_knn(std::string query, int k) override;
+
+    void build_hnsw(int M, int M_max, int efConstruction, int m_L);
+
+    std::vector<std::pair<std::uint64_t, std::string>> search_knn_hnsw(std::string query, int k) override;
 
     void compaction();
 

@@ -12,6 +12,7 @@
 #include <set>
 #include <string>
 #include <utility>
+#include <chrono>
 
 static const std::string DEL = "~DELETED~";
 const uint32_t MAXSIZE       = 2 * 1024 * 1024;
@@ -294,7 +295,16 @@ struct simPair {
 };
 
 std::vector<std::pair<uint64_t, std::string>> KVStore::search_knn(std::string query, int k) {
+    auto start = std::chrono::high_resolution_clock::now();
     std::vector<float> query_vec = embedding_single(query);
+    auto end = std::chrono::high_resolution_clock::now();
+    long long embedding_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    // std::cout << "embedding time: " << embedding_duration << "ms" << std::endl;
+    static int cnt = 0;
+    ++cnt;
+    static long long TIME = 0;
+    TIME += embedding_duration;
+    if (cnt == 120) std::cout << "average embedding time: " << (double)TIME / cnt << "ms" << std::endl;
 
     // 先从memtable里搜索
     std::vector<std::pair<float, std::pair<uint64_t, std::string>>> res1 = s->search_knn(query_vec, k);
@@ -339,6 +349,31 @@ std::vector<std::pair<uint64_t, std::string>> KVStore::search_knn(std::string qu
         ans.push_back(std::make_pair(res[i].second.first, res[i].second.second));
     }
     return ans;
+}
+
+void KVStore::build_hnsw(int M, int M_max, int efConstruction, int m_L) {
+    hnsw = HNSW(M, M_max, efConstruction, m_L);
+
+    // 把 memtable 中的数据插入 HNSW
+    s->hnsw_insert_all(hnsw);
+
+    // 把所有 sstable 中的数据插入 HNSW
+    for (int curLevel = 0; curLevel <= totalLevel; ++curLevel) {
+        for (int curTable = 0; curTable < vecs[curLevel].size(); ++curTable) {
+            for (int index = 0; index < vecs[curLevel][curTable].size(); ++index) {
+                uint64_t key = sstableIndex[curLevel][curTable].getKey(index);
+                std::string filename = sstableIndex[curLevel][curTable].getFilename();
+                uint32_t len;
+                int offset = sstableIndex[curLevel][curTable].searchOffset(key, len);
+                std::string val = fetchString(filename, offset + 32 + 10240 + 12 * sstableIndex[curLevel][curTable].getCnt(), len);        
+                hnsw.insert(key, val, vecs[curLevel][curTable][index]);
+            }
+        }
+    }
+}
+
+std::vector<std::pair<std::uint64_t, std::string>> KVStore::search_knn_hnsw(std::string query, int k) {
+    return hnsw.search(query, k);
 }
 
 void KVStore::compaction() {

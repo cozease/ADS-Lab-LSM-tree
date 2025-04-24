@@ -51,13 +51,13 @@ private:
 		auto trimmed_text = read_file("./data/trimmed_text.txt");
 		max				  = std::min(max, (uint64_t)trimmed_text.size());
 
-        auto put_start = std::chrono::high_resolution_clock::now();
+        // auto put_start = std::chrono::high_resolution_clock::now();
 		for (i = 0; i < max; ++i) {
 			store.put(i, trimmed_text[i]);
 		}
-        auto put_end = std::chrono::high_resolution_clock::now();
-        auto put_duration = std::chrono::duration_cast<std::chrono::milliseconds>(put_end - put_start).count();
-        std::cout << "average put time: " << (double)put_duration / max << "ms" << std::endl;
+        // auto put_end = std::chrono::high_resolution_clock::now();
+        // auto put_duration = std::chrono::duration_cast<std::chrono::milliseconds>(put_end - put_start).count();
+        // std::cout << "average put time: " << (double)put_duration / max << "ms" << std::endl;
 
 		for (i = 0; i < max; ++i)
 			EXPECT(trimmed_text[i], store.get(i));
@@ -72,6 +72,7 @@ private:
         phase();
 		int idx = 0, k = 3;
         
+        store.build_hnsw(7, 8, 30, 6);
         long long search_duration = 0;
 		for (i = 0; i < max; ++i) {
             auto search_start = std::chrono::high_resolution_clock::now();

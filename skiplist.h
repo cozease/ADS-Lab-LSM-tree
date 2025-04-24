@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "embedding.h"
+#include "hnsw.h"
 
 enum TYPE {
     HEAD,
@@ -66,6 +67,7 @@ public:
     bool del(uint64_t key, uint32_t len);
     void scan(uint64_t key1, uint64_t key2, std::vector<std::pair<uint64_t, std::string>> &list);
     std::vector<std::pair<float, std::pair<uint64_t, std::string>>> search_knn(std::vector<float> query_vec, int k);
+    void hnsw_insert_all(HNSW &hnsw);
     slnode *lowerBound(uint64_t key);
     void reset();
     uint32_t getBytes();

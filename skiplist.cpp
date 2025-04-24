@@ -100,6 +100,14 @@ std::vector<std::pair<float, std::pair<uint64_t, std::string>>> skiplist::search
     return res;
 }
 
+void skiplist::hnsw_insert_all(HNSW &hnsw) {
+    slnode *p = head->nxt[0];
+    while (p != tail) {
+        hnsw.insert(p->key, p->val, p->vec);
+        p = p->nxt[0];
+    }
+}
+
 slnode *skiplist::lowerBound(uint64_t key) {
 
 }
