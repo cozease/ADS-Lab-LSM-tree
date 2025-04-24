@@ -76,7 +76,7 @@ private:
         long long search_duration = 0;
 		for (i = 0; i < max; ++i) {
             auto search_start = std::chrono::high_resolution_clock::now();
-			auto res = store.search_knn(test_text[i], k);
+			auto res = store.search_knn_hnsw(test_text[i], k);
             auto search_end = std::chrono::high_resolution_clock::now();
             search_duration += std::chrono::duration_cast<std::chrono::milliseconds>(search_end - search_start).count();
 			for (auto j : res) {
