@@ -51,12 +51,12 @@ KVStore::KVStore(const std::string &dir) :
             TIME = std::max(TIME, cur.getTime()); // 更新时间戳
 
             // 读取每个文件里的所有value并存入embeddings中
-            std::vector<std::vector<float>> file_vecs;
-            for (int j = 0; j < cur.getCnt(); ++j) {
-                std::string val = cur.getData(j);
-                file_vecs.push_back(embedding_single(val));
-            }
-            vecs[totalLevel].push_back(file_vecs);
+            // std::vector<std::vector<float>> file_vecs;
+            // for (int j = 0; j < cur.getCnt(); ++j) {
+            //     std::string val = cur.getData(j);
+            //     file_vecs.push_back(embedding_single(val));
+            // }
+            // vecs[totalLevel].push_back(file_vecs);
         }
     }
 }
@@ -187,6 +187,14 @@ void KVStore::reset() {
         sstableIndex[level].clear();
     }
     totalLevel = -1;
+
+    // 清空 embedding_data
+    std::string path = "./embedding_data/";
+    if (utils::dirExists(path)) {
+        std::string filename = path + "embedding_data.bin";
+        utils::rmfile(filename.data());
+        utils::rmdir(path.data());
+    }
 }
 
 /**
@@ -513,7 +521,7 @@ std::string KVStore::fetchString(std::string file, int startOffset, uint32_t len
 }
 
 void KVStore::load_embedding_from_disk(const std::string &data_root) {
-    std::string filename = data_root + "embedding_data";
+    std::string filename = data_root + "embedding_data.bin";
 
     for (int curLevel = 0; curLevel <= totalLevel; ++curLevel) {
         for (int curTable = 0; curTable < sstableIndex[curLevel].size(); ++curTable) {
