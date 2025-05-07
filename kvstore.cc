@@ -63,6 +63,8 @@ KVStore::KVStore(const std::string &dir) :
 
 KVStore::~KVStore()
 {
+    s->putEmbeddingFile();
+
     sstable ss(s);
     if (!ss.getCnt())
         return; // empty sstable
@@ -89,6 +91,8 @@ void KVStore::put(uint64_t key, const std::string &val) {
     if (nxtsize + 10240 + 32 <= MAXSIZE)
         s->insert(key, val); // 小于等于（不超过） 2MB
     else {
+        s->putEmbeddingFile();
+
         sstable ss(s);
         s->reset();
         std::string url  = ss.getFilename();
@@ -295,16 +299,16 @@ struct simPair {
 };
 
 std::vector<std::pair<uint64_t, std::string>> KVStore::search_knn(std::string query, int k) {
-    auto start = std::chrono::high_resolution_clock::now();
+    // auto start = std::chrono::high_resolution_clock::now();
     std::vector<float> query_vec = embedding_single(query);
-    auto end = std::chrono::high_resolution_clock::now();
-    long long embedding_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    // auto end = std::chrono::high_resolution_clock::now();
+    // long long embedding_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
     // std::cout << "embedding time: " << embedding_duration << "ms" << std::endl;
-    static int cnt = 0;
-    ++cnt;
-    static long long TIME = 0;
-    TIME += embedding_duration;
-    if (cnt == 120) std::cout << "average embedding time: " << (double)TIME / cnt << "ms" << std::endl;
+    // static int cnt = 0;
+    // ++cnt;
+    // static long long TIME = 0;
+    // TIME += embedding_duration;
+    // if (cnt == 120) std::cout << "average embedding time: " << (double)TIME / cnt << "ms" << std::endl;
 
     // 先从memtable里搜索
     std::vector<std::pair<float, std::pair<uint64_t, std::string>>> res1 = s->search_knn(query_vec, k);
@@ -506,4 +510,51 @@ std::string KVStore::fetchString(std::string file, int startOffset, uint32_t len
     fread(strBuf, 1, len, fp);
     fclose(fp);
     return std::string(strBuf, len);
+}
+
+void KVStore::load_embedding_from_disk(const std::string &data_root) {
+    std::string filename = data_root + "embedding_data";
+
+    for (int curLevel = 0; curLevel <= totalLevel; ++curLevel) {
+        for (int curTable = 0; curTable < sstableIndex[curLevel].size(); ++curTable) {
+            std::vector<std::vector<float>> file_vecs;
+            for (int index = 0; index < sstableIndex[curLevel][curTable].getCnt(); ++index) {
+                uint64_t key = sstableIndex[curLevel][curTable].getKey(index);
+                
+                FILE *file = fopen(filename.c_str(), "rb");
+
+                // 获取文件大小
+                fseek(file, 0, SEEK_END);
+                long fileSize = ftell(file);
+                
+                // 每个数据块的大小
+                const size_t blockSize = 8 + dim * 4;
+                
+                // 从文件末尾开始往前查找
+                long currentPos = fileSize - blockSize;  // 跳过文件末尾最后一个完整数据块
+                std::vector<float> result(dim);  // 用于存储找到的向量
+
+                while (currentPos >= 8) {  // 确保至少越过文件头
+                    fseek(file, currentPos, SEEK_SET);
+                    
+                    // 读取当前位置的key
+                    uint64_t current_key;
+                    fread(&current_key, sizeof(uint64_t), 1, file);
+                    
+                    if (current_key == key) {
+                        // 找到目标key，读取后面的float数组
+                        fread(result.data(), 4, dim, file);
+                        file_vecs.push_back(result);
+                        break;
+                    }
+                    
+                    // 向前移动一个数据块
+                    currentPos -= blockSize;
+                }
+                
+                fclose(file);
+            }
+            vecs[curLevel].push_back(file_vecs);
+        }
+    }
 }

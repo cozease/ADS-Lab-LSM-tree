@@ -49,4 +49,6 @@ public:
     void addsstable(sstable ss, int level); // 将ss加入缓存
 
     std::string fetchString(std::string file, int startOffset, uint32_t len);
+
+    void load_embedding_from_disk(const std::string &data_root);
 };

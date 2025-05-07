@@ -72,7 +72,7 @@ private:
         phase();
 		int idx = 0, k = 3;
         
-        store.build_hnsw(7, 8, 30, 6);
+        store.build_hnsw(7, 8, 30, 7);
         long long search_duration = 0;
 		for (i = 0; i < max; ++i) {
             auto search_start = std::chrono::high_resolution_clock::now();

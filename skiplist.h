@@ -18,6 +18,8 @@ enum TYPE {
 
 const int MAX_LEVEL = 18;
 
+const uint64_t dim = 768;
+
 class slnode {
 public:
     uint64_t key;
@@ -30,7 +32,10 @@ public:
         this->key  = key;
         this->val  = val;
         this->type = type;
-        this->vec = embedding_single(val);
+        if (val == "~DELETE~") 
+            this->vec = std::vector<float>(dim, std::numeric_limits<float>::max());
+        else
+            this->vec = embedding_single(val);
         for (int i = 0; i < MAX_LEVEL; ++i)
             nxt.push_back(nullptr);
     }
@@ -71,6 +76,8 @@ public:
     slnode *lowerBound(uint64_t key);
     void reset();
     uint32_t getBytes();
+
+    void putEmbeddingFile(); // 将 embedding 写入文件
 };
 
 #endif // LSM_KV_SKIPLIST_H

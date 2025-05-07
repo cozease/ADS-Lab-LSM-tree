@@ -1,5 +1,7 @@
 #include "skiplist.h"
 
+#include "utils.h"
+
 double skiplist::my_rand() {
     return (double)rand() / RAND_MAX;
 }
@@ -24,7 +26,10 @@ void skiplist::insert(uint64_t key, const std::string &str) {
     if (p->nxt[0]->key == key) {
         bytes += str.length() - p->nxt[0]->val.length();
         p->nxt[0]->val = str;
-        p->nxt[0]->vec = embedding_single(str);
+        if (str == "~DELETE~")
+            p->nxt[0]->vec = std::vector<float>(dim, std::numeric_limits<float>::max());
+        else
+            p->nxt[0]->vec = embedding_single(str);
         return;
     }
     slnode *newNode = new slnode(key, str, NORMAL);
@@ -130,3 +135,26 @@ uint32_t skiplist::getBytes() {
     return bytes;
 }
 
+void skiplist::putEmbeddingFile() {
+    // 如果文件不存在，则新建并写入文件头
+    std::string path = "./embedding_data/";
+    std::string filename = path + "embedding_data.bin";
+    if (!utils::dirExists(path)) {
+        utils::mkdir(path.data());
+        FILE *file = fopen(filename.c_str(), "wb");
+        fseek(file, 0, SEEK_SET);
+        fwrite(&dim, 8, 1, file);
+        fflush(file);
+        fclose(file);
+    }
+
+    // 写入当前 skip list 中的所有 embedding
+    FILE *file = fopen(filename.c_str(), "ab+");
+    fseek(file, 8, SEEK_SET);
+    slnode *p = head->nxt[0];
+    while (p != tail) {
+        fwrite(&p->key, 8, 1, file);
+        fwrite(p->vec.data(), 4, dim, file);
+        p = p->nxt[0];
+    }
+}
