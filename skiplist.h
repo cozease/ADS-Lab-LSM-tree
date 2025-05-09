@@ -69,9 +69,14 @@ public:
     int randLevel();
     void insert(uint64_t key, const std::string &str);
     std::string search(uint64_t key);
+    std::vector<float> search_vec(uint64_t key);
     bool del(uint64_t key, uint32_t len);
     void scan(uint64_t key1, uint64_t key2, std::vector<std::pair<uint64_t, std::string>> &list);
-    std::vector<std::pair<float, std::pair<uint64_t, std::string>>> search_knn(std::vector<float> query_vec, int k);
+    std::vector<std::pair<float, std::pair<uint64_t, std::string>>> search_knn(
+        std::vector<float> query_vec,
+        int k,
+        const std::vector<std::pair<uint64_t, std::vector<float>>> &deleted_nodes
+    );
     void hnsw_insert_all(HNSW &hnsw);
     slnode *lowerBound(uint64_t key);
     void reset();

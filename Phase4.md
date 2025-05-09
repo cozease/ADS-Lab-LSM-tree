@@ -212,7 +212,7 @@ HNSW 的 `Put` 我们不进行测试，`Put` 是依赖于 `Delete` 操作的，�
 
 ### HNSW_Persistent_Test
 
-在实现完成后，请分别uncomment `HNSW_Persistent_Test` Phase1 和 Phase2 中的 `save_hnsw_index_to_disk` 和 `load_hnsw_index_from_disk` 函数，并运行测试用例
+在实现完成后，请分别uncomment `HNSW_Persistent_Test` Phase1 和 Phase2 中的 `save_hnsw_index_to_disk` 和 `x` 函数，并运行测试用例
 
 测试会插入一些数据，然后保存到磁盘，然后重启数据库，重新从磁盘加载数据，然后查询数据
 

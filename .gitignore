@@ -37,3 +37,4 @@ correctness
 
 /model/
 /embedding_data/
+/hnsw_data/

@@ -19,6 +19,8 @@ private:
 
     std::vector<std::vector<std::vector<float>>> vecs[15]; // embedding for each value
 
+    std::vector<std::pair<uint64_t, std::vector<float>>> deleted_nodes;
+
     int totalLevel = -1; // 层数
 
     HNSW hnsw;
@@ -30,6 +32,8 @@ public:
     void put(uint64_t key, const std::string &s) override;
 
     std::string get(uint64_t key) override;
+
+    std::vector<float> get_vec(uint64_t key);
 
     bool del(uint64_t key) override;
 
@@ -51,4 +55,7 @@ public:
     std::string fetchString(std::string file, int startOffset, uint32_t len);
 
     void load_embedding_from_disk(const std::string &data_root);
+    
+    void save_hnsw_index_to_disk(const std::string &dir);
+    void load_hnsw_index_from_disk(const std::string &dir);
 };

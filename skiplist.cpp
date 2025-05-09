@@ -49,6 +49,15 @@ std::string skiplist::search(uint64_t key) {
     return "";
 }
 
+std::vector<float> skiplist::search_vec(uint64_t key) {
+    slnode *p = head;
+    for (int i = curMaxL - 1; i >= 0; --i) {
+        while (p->nxt[i]->key < key) p = p->nxt[i];
+        if (p->nxt[i]->key == key) return p->nxt[i]->vec;
+    }
+    return {};
+}
+
 bool skiplist::del(uint64_t key, uint32_t len) {
 
 }
@@ -81,10 +90,31 @@ struct memPair {
     }
 };
 
-std::vector<std::pair<float, std::pair<uint64_t, std::string>>> skiplist::search_knn(std::vector<float> query_vec, int k) {
+std::vector<std::pair<float, std::pair<uint64_t, std::string>>> skiplist::search_knn(
+    std::vector<float> query_vec,
+    int k,
+    const std::vector<std::pair<uint64_t, std::vector<float>>> &deleted_nodes
+) {
     std::priority_queue<memPair, std::vector<memPair>, std::greater<memPair>> heap;
     slnode *p = head->nxt[0];
     while (p != tail) {
+        // skip deleted nodes
+        if (std::find_if(deleted_nodes.begin(), deleted_nodes.end(),
+            [&p](const std::pair<uint64_t, std::vector<float>> &node) {
+                bool flag = true;
+                const float epsilon = 1e-6f;
+                for (size_t i = 0; i < dim; ++i) {
+                    if (fabs(node.second[i] - p->vec[i]) > epsilon) {
+                        flag = false;
+                        break;
+                    }
+                }
+                return flag && node.first == p->key;
+            }) != deleted_nodes.end()) {
+            p = p->nxt[0];
+            continue;
+        }
+
         float sim = common_embd_similarity_cos(query_vec.data(), p->vec.data(), query_vec.size());
         if (heap.size() < k) {
             heap.push(memPair(p->key, p->val, sim));
@@ -108,7 +138,7 @@ std::vector<std::pair<float, std::pair<uint64_t, std::string>>> skiplist::search
 void skiplist::hnsw_insert_all(HNSW &hnsw) {
     slnode *p = head->nxt[0];
     while (p != tail) {
-        hnsw.insert(p->key, p->val, p->vec);
+        hnsw.insert(p->key, p->vec);
         p = p->nxt[0];
     }
 }

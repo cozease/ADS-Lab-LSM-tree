@@ -5,6 +5,7 @@
 #include <chrono>
 #include <iostream>
 
+#include "utils.h"
 #include "embedding.h"
 
 // int HNSW::rand_level() {
@@ -20,13 +21,14 @@
 
 int HNSW::rand_level() {
     float r = static_cast<float>(rand()) / RAND_MAX;
-    int level = static_cast<int>(-log(r) * m_L);
+    uint32_t level = static_cast<uint32_t>(-log(r) * m_L);
     return std::min(level, m_L);
 }
 
-void HNSW::insert(uint64_t key, const std::string &val, const std::vector<float> &vec) {
+void HNSW::insert(uint64_t key, const std::vector<float> &vec) {
     int level = rand_level();
-    HNSWNode *node = new HNSWNode(level, key, val, vec);
+    HNSWNode *node = new HNSWNode(level, key, vec);
+    nodes.push_back(node);
 
     // 如果 HNSW 为空，将新节点设置为 entry_point
     if (!entry_point) {
@@ -225,22 +227,23 @@ void HNSW::insert(uint64_t key, const std::string &val, const std::vector<float>
 //     // return ans;
 // }
 
-std::vector<std::pair<uint64_t, std::string>> HNSW::search(std::string query, int k) {
-    auto start = std::chrono::high_resolution_clock::now();
+std::vector<uint64_t> HNSW::search(std::string query, int k) {
+    // auto start = std::chrono::high_resolution_clock::now();
     std::vector<float> query_vec = embedding_single(query);
-    auto end = std::chrono::high_resolution_clock::now();
-    long long embedding_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-    static int cnt = 0;
-    ++cnt;
-    static long long TIME = 0;
-    TIME += embedding_duration;
-    if (cnt == 120) std::cout << "average embedding time: " << (double)TIME / cnt << "ms" << std::endl;
+    // auto end = std::chrono::high_resolution_clock::now();
+    // long long embedding_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    // static int cnt = 0;
+    // ++cnt;
+    // static long long TIME = 0;
+    // TIME += embedding_duration;
+    // if (cnt == 120) std::cout << "average embedding time: " << (double)TIME / cnt << "ms" << std::endl;
     
     // 第一阶段：多路径下降
     std::priority_queue<std::pair<float, HNSWNode *>> candidates;
     candidates.push(std::make_pair(
         common_embd_similarity_cos(query_vec.data(), entry_point->vec.data(), query_vec.size()),
-        entry_point));
+        entry_point)
+    );
         
     for (int level = entry_point->level; level >= 1; --level) {
         // 保持多个候选路径
@@ -271,11 +274,25 @@ std::vector<std::pair<uint64_t, std::string>> HNSW::search(std::string query, in
         if (!visited.contains(current.second->key)) {
             visited.insert(current.second->key);
             
-            if (result.size() < k) {
-                result.push(current);
-            } else if (current.first > result.top().first) {
-                result.pop();
-                result.push(current);
+            // 忽略已被删除的节点
+            if (std::find_if(deleted_nodes.begin(), deleted_nodes.end(),
+                [&current](const std::pair<uint64_t, std::vector<float>> &node) {
+                    bool flag = true;
+                    const float epsilon = 1e-6f;
+                    for (size_t i = 0; i < current.second->vec.size(); ++i) {
+                        if (fabs(node.second[i] - current.second->vec[i]) > epsilon) {
+                            flag = false;
+                            break;
+                        }
+                    }
+                    return flag && node.first == current.second->key;
+                }) == deleted_nodes.end()) {
+                if (result.size() < k) {
+                    result.push(current);
+                } else if (current.first > result.top().first) {
+                    result.pop();
+                    result.push(current);
+                }
             }
             
             // 扩展邻居
@@ -290,12 +307,162 @@ std::vector<std::pair<uint64_t, std::string>> HNSW::search(std::string query, in
     }
     
     // 收集结果
-    std::vector<std::pair<uint64_t, std::string>> ans;
+    std::vector<uint64_t> ans;
     while (!result.empty()) {
         auto current = result.top();
         result.pop();
-        ans.push_back(std::make_pair(current.second->key, current.second->val));
+        ans.push_back(current.second->key);
     }
     std::reverse(ans.begin(), ans.end());
     return ans;
+}
+
+void HNSW::save_to_disk(const std::string &dir) {
+    if (utils::dirExists(dir)) {
+        utils::rmdir(dir.data());
+    }
+    utils::mkdir(dir.data());
+    FILE *file;
+
+    // 写入全局参数文件
+    std::string global_header_path = dir + "global_header.bin";
+    file = fopen(global_header_path.c_str(), "wb");
+    fseek(file, 0, SEEK_SET);
+    fwrite(&M, 4, 1, file);
+    fwrite(&M_max, 4, 1, file);
+    fwrite(&efConstruction, 4, 1, file);
+    fwrite(&m_L, 4, 1, file);
+    uint32_t entry_id = entry_point->id;
+    fwrite(&entry_id, 4, 1, file);
+    uint32_t num_nodes = nodes.size();
+    fwrite(&num_nodes, 4, 1, file);
+    uint32_t dim = 768;
+    fwrite(&dim, 4, 1, file);
+    fflush(file);
+    fclose(file);
+
+    // 写入被删除的节点数据
+    std::string deleted_nodes_path = dir + "deleted_nodes.bin";
+    file = fopen(deleted_nodes_path.c_str(), "wb");
+    fseek(file, 0, SEEK_SET);
+    for (auto &node : deleted_nodes) {
+        fwrite(&node.first, 8, 1, file);
+        fwrite(node.second.data(), 4, dim, file);
+    }
+    fflush(file);
+    fclose(file);
+
+    // 写入每个节点的数据
+    std::string nodes_dir = dir + "nodes/";
+    utils::mkdir(nodes_dir.data());
+    for (auto &node : nodes) {
+        std::string node_dir = nodes_dir + std::to_string(node->id) + "/";
+        utils::mkdir(node_dir.data());
+        
+        // 写入节点的基本信息
+        std::string node_header_path = node_dir + "header.bin";
+        file = fopen(node_header_path.c_str(), "wb");
+        fseek(file, 0, SEEK_SET);
+        fwrite(&node->level, 4, 1, file);
+        fwrite(&node->key, 8, 1, file);
+        fwrite(node->vec.data(), 4, dim, file);
+        fflush(file);
+        fclose(file);
+
+        // 写入邻接表
+        std::string neighbors_dir = node_dir + "edges/";
+        utils::mkdir(neighbors_dir.data());
+        for (int i = 0; i <= node->level; ++i) {
+            std::string neighbors_path = neighbors_dir + std::to_string(i) + ".bin";
+            file = fopen(neighbors_path.c_str(), "wb");
+            fseek(file, 0, SEEK_SET);
+            uint32_t num_neighbors = node->neighbors[i].size();
+            fwrite(&num_neighbors, 4, 1, file);
+            for (auto &neighbor : node->neighbors[i]) {
+                fwrite(&neighbor.second->id, 4, 1, file);
+                fwrite(&neighbor.first, 4, 1, file);
+            }
+            fflush(file);
+            fclose(file);
+        }
+    }
+}
+
+void HNSW::load_from_disk(const std::string &dir) {
+    // 读取全局参数文件
+    std::string global_header_path = dir + "global_header.bin";
+    FILE *file = fopen(global_header_path.c_str(), "rb");
+    fseek(file, 0, SEEK_SET);
+    fread(&M, 4, 1, file);
+    fread(&M_max, 4, 1, file);
+    fread(&efConstruction, 4, 1, file);
+    fread(&m_L, 4, 1, file);
+    uint32_t entry_id;
+    fread(&entry_id, 4, 1, file);
+    uint32_t num_nodes;
+    fread(&num_nodes, 4, 1, file);
+    uint32_t dim;
+    fread(&dim, 4, 1, file);
+    fclose(file);
+
+    // 读取被删除的节点数据
+    std::string deleted_nodes_path = dir + "deleted_nodes.bin";
+    file = fopen(deleted_nodes_path.c_str(), "rb");
+    fseek(file, 0, SEEK_SET);
+    while (true) {
+        // 如果到了文件尾，则退出
+        if (feof(file)) break;
+
+        uint64_t key;
+        fread(&key, sizeof(uint64_t), 1, file);
+        std::vector<float> vec(dim);
+        fread(vec.data(), sizeof(float), dim, file);
+        deleted_nodes.push_back(std::make_pair(key, vec));
+    }
+    fclose(file);
+
+    // 读取每个节点的数据
+    std::string nodes_dir = dir + "nodes/";
+    for (uint32_t i = 0; i < num_nodes; ++i) {
+        std::string node_dir = nodes_dir + std::to_string(i) + "/";
+        
+        // 读取节点的基本信息
+        std::string node_header_path = node_dir + "header.bin";
+        file = fopen(node_header_path.c_str(), "rb");
+        fseek(file, 0, SEEK_SET);
+        uint32_t level;
+        uint64_t key;
+        fread(&level, sizeof(uint32_t), 1, file);
+        fread(&key, sizeof(uint64_t), 1, file);
+        std::vector<float> vec(dim);
+        fread(vec.data(), sizeof(float), dim, file);
+        fclose(file);
+
+        // 创建节点对象
+        HNSWNode *node = new HNSWNode(level, key, vec);
+        nodes.push_back(node);
+    }
+
+    // 读取邻接表
+    for (auto &node : nodes) {
+        std::string neighbors_dir = nodes_dir + std::to_string(node->id) + "/edges/";
+        for (int i = 0; i <= node->level; ++i) {
+            std::string neighbors_path = neighbors_dir + std::to_string(i) + ".bin";
+            file = fopen(neighbors_path.c_str(), "rb");
+            fseek(file, 0, SEEK_SET);
+            uint32_t num_neighbors;
+            fread(&num_neighbors, sizeof(uint32_t), 1, file);
+            for (uint32_t j = 0; j < num_neighbors; ++j) {
+                uint32_t neighbor_id;
+                float distance;
+                fread(&neighbor_id, sizeof(uint32_t), 1, file);
+                fread(&distance, sizeof(float), 1, file);
+                node->neighbors[i].push_back(std::make_pair(distance, nodes[neighbor_id]));
+            }
+            fclose(file);
+        }
+    }
+
+    // 设置 entry_point
+    entry_point = nodes[entry_id];
 }

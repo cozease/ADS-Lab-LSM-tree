@@ -59,6 +59,8 @@ KVStore::KVStore(const std::string &dir) :
             // vecs[totalLevel].push_back(file_vecs);
         }
     }
+
+    hnsw = HNSW(7, 8, 30, 6);
 }
 
 KVStore::~KVStore()
@@ -106,6 +108,8 @@ void KVStore::put(uint64_t key, const std::string &val) {
         compaction();
         s->insert(key, val);
     }
+
+    hnsw.insert(key, get_vec(key));
 }
 
 /**
@@ -157,6 +161,24 @@ std::string KVStore::get(uint64_t key) //
     return res;
 }
 
+std::vector<float> KVStore::get_vec(uint64_t key) {
+    // 先在 memtable 中搜索，如果找到或是 deleted，直接返回
+    std::vector<float> res = s->search_vec(key);
+    if (!res.empty()) return res;
+    
+    // 在 sstable 中搜索
+    for (int level = 0; level <= totalLevel; ++level) {
+        for (int table = 0; table < sstableIndex[level].size(); ++table) {
+            for (int index = 0; index < sstableIndex[level][table].getCnt(); ++index) {
+                if (sstableIndex[level][table].getKey(index) == key) {
+                    return vecs[level][table][index];
+                }
+            }
+        }
+    }
+    return res;
+}
+
 /**
  * Delete the given key-value pair if it exists.
  * Returns false iff the key is not found.
@@ -166,6 +188,10 @@ bool KVStore::del(uint64_t key) {
     if (!res.length())
         return false; // not exist
     put(key, DEL);    // put a del marker
+
+    // 添加一个删除标记
+    hnsw.deleted_nodes.push_back(std::make_pair(key, get_vec(key)));
+
     return true;
 }
 
@@ -319,13 +345,30 @@ std::vector<std::pair<uint64_t, std::string>> KVStore::search_knn(std::string qu
     // if (cnt == 120) std::cout << "average embedding time: " << (double)TIME / cnt << "ms" << std::endl;
 
     // 先从memtable里搜索
-    std::vector<std::pair<float, std::pair<uint64_t, std::string>>> res1 = s->search_knn(query_vec, k);
+    std::vector<std::pair<float, std::pair<uint64_t, std::string>>> res1 = s->search_knn(query_vec, k, hnsw.deleted_nodes);
 
     // 再从所有的sstable里搜索
     std::priority_queue<simPair, std::vector<simPair>, std::greater<simPair>> heap;
     for (int curLevel = 0; curLevel <= totalLevel; ++curLevel) {
         for (int curTable = 0; curTable < vecs[curLevel].size(); ++curTable) {
             for (int index = 0; index < vecs[curLevel][curTable].size(); ++index) {
+                // skip deleted nodes
+                if (std::find_if(
+                        hnsw.deleted_nodes.begin(), hnsw.deleted_nodes.end(),
+                        [&](const std::pair<uint64_t, std::vector<float>> &node) {
+                            bool flag = true;
+                            const float epsilon = 1e-6f;
+                            for (size_t i = 0; i < dim; ++i) {
+                                if (std::abs(node.second[i] - vecs[curLevel][curTable][index][i]) > epsilon) {
+                                    flag = false;
+                                    break;
+                                }
+                            }
+                            return flag && (node.first == sstableIndex[curLevel][curTable].getKey(index));
+                        }) != hnsw.deleted_nodes.end()) {
+                    continue;
+                }
+                
                 float sim = common_embd_similarity_cos(query_vec.data(), vecs[curLevel][curTable][index].data(), query_vec.size());
                 if (heap.size() < k) {
                     heap.push(simPair(curLevel, curTable, index, sim));
@@ -378,14 +421,17 @@ void KVStore::build_hnsw(int M, int M_max, int efConstruction, int m_L) {
                 uint32_t len;
                 int offset = sstableIndex[curLevel][curTable].searchOffset(key, len);
                 std::string val = fetchString(filename, offset + 32 + 10240 + 12 * sstableIndex[curLevel][curTable].getCnt(), len);        
-                hnsw.insert(key, val, vecs[curLevel][curTable][index]);
+                hnsw.insert(key, vecs[curLevel][curTable][index]);
             }
         }
     }
 }
 
 std::vector<std::pair<std::uint64_t, std::string>> KVStore::search_knn_hnsw(std::string query, int k) {
-    return hnsw.search(query, k);
+    std::vector<uint64_t> res = hnsw.search(query, k);
+    std::vector<std::pair<uint64_t, std::string>> ans;
+    for (auto key : res) ans.push_back(std::make_pair(key, get(key)));
+    return ans;
 }
 
 void KVStore::compaction() {
@@ -565,4 +611,12 @@ void KVStore::load_embedding_from_disk(const std::string &data_root) {
             vecs[curLevel].push_back(file_vecs);
         }
     }
+}
+
+void KVStore::save_hnsw_index_to_disk(const std::string &dir) {
+    hnsw.save_to_disk(dir);
+}
+
+void KVStore::load_hnsw_index_from_disk(const std::string &dir) {
+    hnsw.load_from_disk(dir);
 }
