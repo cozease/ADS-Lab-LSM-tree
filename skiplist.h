@@ -39,6 +39,15 @@ public:
         for (int i = 0; i < MAX_LEVEL; ++i)
             nxt.push_back(nullptr);
     }
+
+    slnode(uint64_t key, const std::string &val, TYPE type, const std::vector<float> &vec) {
+        this->key  = key;
+        this->val  = val;
+        this->type = type;
+        this->vec  = vec;
+        for (int i = 0; i < MAX_LEVEL; ++i)
+            nxt.push_back(nullptr);
+    }
 };
 
 class skiplist {
@@ -68,6 +77,7 @@ public:
     double my_rand();
     int randLevel();
     void insert(uint64_t key, const std::string &str);
+    void insert_with_embedding(uint64_t key, const std::string &str, const std::vector<float> &vec);
     std::string search(uint64_t key);
     std::vector<float> search_vec(uint64_t key);
     bool del(uint64_t key, uint32_t len);

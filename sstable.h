@@ -16,6 +16,8 @@ class sstable : public sstablehead { // 储存sstable的软数据结构
 private:
     std::vector<std::string> data;
 
+    // std::vector<std::vector<float>> vecs;
+
 public:
     void reset() { // 这里不reset time, namesuf
         cnt    = 0;
@@ -26,6 +28,7 @@ public:
         filter.reset();
         index.clear();
         data.clear();
+        // vecs.clear();
     }
 
     sstable() {
@@ -38,6 +41,7 @@ public:
         filter.reset();
         index.clear();
         data.clear();
+        // vecs.clear();
     }
 
     sstable(skiplist *s) { // 将一个memtable转成sstable， 这里时间戳加1
@@ -58,6 +62,7 @@ public:
             filter.insert(cur->key);
             index.emplace_back(cur->key, curpos);
             data.push_back(cur->val);
+            // vecs.push_back(cur->vec);
             cur = cur->nxt[0];
         }
     }
@@ -77,6 +82,10 @@ public:
     }
 
     sstablehead getHead(); // 取出头部
+
+    // std::vector<std::vector<float>> getVecs() {
+    //     return vecs;
+    // }
 };
 
 #endif // LSM_KV_SSTABLE_H

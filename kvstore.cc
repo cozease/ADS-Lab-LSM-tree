@@ -60,7 +60,8 @@ KVStore::KVStore(const std::string &dir) :
         }
     }
 
-    hnsw = HNSW(7, 8, 30, 6);
+    // hnsw = HNSW(7, 8, 30, 6);
+    hnsw = HNSW(16, 32, 200, 16);
 }
 
 KVStore::~KVStore()
@@ -110,6 +111,35 @@ void KVStore::put(uint64_t key, const std::string &val) {
     }
 
     hnsw.insert(key, get_vec(key));
+}
+
+void KVStore::put_with_embedding(uint64_t key, const std::string &val, const std::vector<float> &vec) {
+    uint32_t nxtsize = s->getBytes();
+    std::string res  = s->search(key);
+    if (!res.length()) { // new add
+        nxtsize += 12 + val.length();
+    } else
+        nxtsize = nxtsize - res.length() + val.length(); // change string
+    if (nxtsize + 10240 + 32 <= MAXSIZE)
+        s->insert_with_embedding(key, val, vec); // 小于等于（不超过） 2MB
+    else {
+        s->putEmbeddingFile();
+
+        sstable ss(s);
+        s->reset();
+        std::string url  = ss.getFilename();
+        std::string path = "./data/level-0";
+        if (!utils::dirExists(path)) {
+            utils::mkdir(path.data());
+            totalLevel = 0;
+        }
+        addsstable(ss, 0);      // 加入缓存
+        ss.putFile(url.data()); // 加入磁盘
+        compaction();
+        s->insert_with_embedding(key, val, vec);
+    }
+
+    hnsw.insert(key, vec);
 }
 
 /**
@@ -451,7 +481,7 @@ void KVStore::compaction() {
             start = std::min(start, ssh.getMinV());
             end   = std::max(end, ssh.getMaxV());
         }
-        vecs[curLevel].erase(vecs[curLevel].begin(), vecs[curLevel].begin() + compactionNum);
+        // vecs[curLevel].erase(vecs[curLevel].begin(), vecs[curLevel].begin() + compactionNum);
 
         // 处理下一层要合并的sstable
         ++curLevel;
@@ -465,7 +495,7 @@ void KVStore::compaction() {
             for (int i = sstableIndex[curLevel].size() - 1; i >= 0; --i) {
                 if (!(sstableIndex[curLevel][i].getMinV() > end || sstableIndex[curLevel][i].getMaxV() < start))
                     targets.push_back(sstableIndex[curLevel][i]);
-                vecs[curLevel].erase(vecs[curLevel].begin() + i);
+                // vecs[curLevel].erase(vecs[curLevel].begin() + i);
             }
         }
 
@@ -536,12 +566,13 @@ void KVStore::addsstable(sstable ss, int level) {
     sstableIndex[level].push_back(ss.getHead());
 
     // embedding for each value
-    std::vector<std::vector<float>> file_vecs;
-    for (int i = 0; i < ss.getCnt(); ++i) {
-        std::string val = ss.getData(i);
-        file_vecs.push_back(embedding_single(val));
-    }
-    vecs[level].push_back(file_vecs);
+    // std::vector<std::vector<float>> file_vecs;
+    // for (int i = 0; i < ss.getCnt(); ++i) {
+    //     std::string val = ss.getData(i);
+    //     file_vecs.push_back(embedding_single(val));
+    // }
+    // vecs[level].push_back(file_vecs);
+    // vecs[level].push_back(ss.getVecs());
 }
 
 char strBuf[2097152];

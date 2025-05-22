@@ -40,6 +40,33 @@ void skiplist::insert(uint64_t key, const std::string &str) {
     bytes += 12 + str.length();
 }
 
+void skiplist::insert_with_embedding(uint64_t key, const std::string &str, const std::vector<float> &vec) {
+    int level = randLevel();
+    if (level > curMaxL)
+        curMaxL = level;
+    std::vector<slnode *> update(level);
+    slnode *p = head;
+    for (int i = level - 1; i >= 0; --i) {
+        while (p->nxt[i]->key < key) p = p->nxt[i];
+        update[i] = p;
+    }
+    if (p->nxt[0]->key == key) {
+        bytes += str.length() - p->nxt[0]->val.length();
+        p->nxt[0]->val = str;
+        if (str == "~DELETE~")
+            p->nxt[0]->vec = std::vector<float>(dim, std::numeric_limits<float>::max());
+        else
+            p->nxt[0]->vec = vec;
+        return;
+    }
+    slnode *newNode = new slnode(key, str, NORMAL, vec);
+    for (int i = 0; i < level; ++i) {
+        newNode->nxt[i] = update[i]->nxt[i];
+        update[i]->nxt[i] = newNode;
+    }
+    bytes += 12 + str.length();
+}
+
 std::string skiplist::search(uint64_t key) {
     slnode *p = head;
     for (int i = curMaxL - 1; i >= 0; --i) {
