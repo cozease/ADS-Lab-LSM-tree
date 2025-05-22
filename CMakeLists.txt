@@ -51,6 +51,12 @@ add_executable(HNSW_Persistent_Test_Phase2 HNSW_Persistent_Test_Phase2.cpp
         bloom.cpp bloom.h MurmurHash3.h utils.h test.h
         sstablehead.cpp sstablehead.h hnsw.cpp hnsw.h)
 
+add_executable(100k_test 100k_test.cpp
+        kvstore_api.h kvstore.h kvstore.cc
+        skiplist.cpp skiplist.h sstable.cpp sstable.h
+        bloom.cpp bloom.h MurmurHash3.h utils.h test.h
+        sstablehead.cpp sstablehead.h hnsw.cpp hnsw.h)
+
 
 target_link_libraries(correctness PUBLIC embedding)
 target_link_libraries(persistence PUBLIC embedding)
@@ -59,6 +65,7 @@ target_link_libraries(Vector_Persistent_Test_Phase2 PUBLIC embedding)
 target_link_libraries(HNSW_Delete_Test PUBLIC embedding)
 target_link_libraries(HNSW_Persistent_Test_Phase1 PUBLIC embedding)
 target_link_libraries(HNSW_Persistent_Test_Phase2 PUBLIC embedding)
+target_link_libraries(100k_test PUBLIC embedding)
 
 add_subdirectory(third_party/llama.cpp)
 
