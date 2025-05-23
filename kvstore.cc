@@ -13,6 +13,7 @@
 #include <string>
 #include <utility>
 #include <chrono>
+#include <future>
 
 static const std::string DEL = "~DELETED~";
 const uint32_t MAXSIZE       = 2 * 1024 * 1024;
@@ -76,6 +77,7 @@ KVStore::~KVStore()
         utils::_mkdir(path.data());
         totalLevel = 0;
     }
+    addsstable(ss, 0);
     ss.putFile(ss.getFilename().data());
     compaction(); // 从0层开始尝试合并
 }
@@ -146,7 +148,7 @@ void KVStore::put_with_embedding(uint64_t key, const std::string &val, const std
  * Returns the (string) value of the given key.
  * An empty string indicates not found.
  */
-std::string KVStore::get(uint64_t key) //
+std::string KVStore::get(uint64_t key)
 {
     uint64_t time = 0;
     int goalOffset;
@@ -188,6 +190,56 @@ std::string KVStore::get(uint64_t key) //
     res = fetchString(goalUrl, goalOffset, goalLen);
     if (res == DEL)
         return "";
+    return res;
+}
+
+struct parallel_pair {
+    bool flag;
+    std::string res;
+    uint64_t time;
+};
+
+std::string KVStore::parallel_get(uint64_t key) {
+    std::string res = s->search(key);
+    if (res.length()) { // 在memtable中找到, 或者是deleted，说明最近被删除过，
+                        // 不用查sstable
+        if (res == DEL)
+            return "";
+        return res;
+    }
+
+    std::vector<std::future<parallel_pair>> parallel_futures;
+    for (int level = 0; level <= totalLevel; ++level) {
+        for (int j = 0; j < sstableIndex[level].size(); ++j) {
+            parallel_futures.push_back(std::async(std::launch::async, [=]() {
+                parallel_pair pair = {false, "", 0};
+                sstablehead ssh = sstableIndex[level][j];
+
+                if (key < ssh.getMinV() || key > ssh.getMaxV())
+                    return pair;
+
+                uint32_t len;
+                int offset = ssh.searchOffset(key, len);
+                if (offset == -1)
+                    return pair;
+
+                pair.flag = true;
+                pair.res = fetchString(ssh.getFilename(), offset + 32 + 10240 + 12 * ssh.getCnt(), len);
+                pair.time = ssh.getTime();
+                return pair;
+            }));
+        }
+    }
+
+    res = "";
+    std::uint64_t time = 0;
+    for (auto &future : parallel_futures) {
+        parallel_pair cur = future.get();
+        if (cur.flag && cur.time > time) {
+            time = cur.time;
+            res = cur.res;
+        }
+    }
     return res;
 }
 

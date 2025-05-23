@@ -34,6 +34,7 @@ public:
     void put_with_embedding(uint64_t key, const std::string &s, const std::vector<float> &vec);
 
     std::string get(uint64_t key) override;
+    std::string parallel_get(uint64_t key);
 
     std::vector<float> get_vec(uint64_t key);
 
